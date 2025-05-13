@@ -4,9 +4,17 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
+	"strings"
+	"time"
 )
 
-var db = make(map[string]string)
+type Value struct {
+	value string
+	exp   time.Time
+}
+
+var db = make(map[string]Value)
 
 func main() {
 	l, err := net.Listen("tcp", "localhost:6379")
@@ -44,17 +52,44 @@ func handleConnection(conn net.Conn) {
 				conn.Write([]byte(resp))
 			}
 		case "set":
-			db[cmd.args[0]] = cmd.args[1]
-			conn.Write([]byte("+OK\r\n"))
+			handleSET(cmd, conn)
 		case "get":
-			val, ok := db[cmd.args[0]]
-			if ok {
-				resp := fmt.Sprintf("$%d\r\n%s\r\n", len(val), val)
-				conn.Write([]byte(resp))
-			} else {
-				conn.Write([]byte("$-1\r\n"))
-			}
+			handleGET(cmd, conn)
 		}
 
 	}
+}
+
+func handleSET(cmd *Command, conn net.Conn) {
+	key := cmd.args[0]
+	value := Value{
+		value: cmd.args[1],
+	}
+	if len(cmd.args) > 2 {
+		units := cmd.args[2]
+		num, err := strconv.Atoi(cmd.args[3])
+		if err != nil {
+			log.Print(err)
+			return
+		}
+		if strings.ToLower(units) == "px" {
+			value.exp = time.Now().Add(time.Duration(num) * time.Millisecond)
+		}
+	}
+	log.Printf("%s -> %+v", key, value)
+	db[key] = value
+	conn.Write([]byte("+OK\r\n"))
+
+}
+
+func handleGET(cmd *Command, conn net.Conn) {
+	val, ok := db[cmd.args[0]]
+	
+	if ok && (time.Now().Before(val.exp) || val.exp.IsZero()) {
+		resp := fmt.Sprintf("$%d\r\n%s\r\n", len(val.value), val.value)
+		conn.Write([]byte(resp))
+		return
+	}
+
+	conn.Write([]byte("$-1\r\n"))
 }
