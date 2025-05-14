@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -14,9 +15,21 @@ type Value struct {
 	exp   time.Time
 }
 
-var db = make(map[string]Value)
+type Config struct {
+	db         map[string]Value
+	dir        string
+	dbFileName string
+}
+
+var cfg = Config{
+	db:         make(map[string]Value),
+}
 
 func main() {
+	flag.StringVar(&cfg.dir, "dir", "/tmp/redis-files", "the path to the directory where the RDB file is stored")
+	flag.StringVar(&cfg.dbFileName, "dbfilename", "rdbfile", "the name of the RDB file")
+	flag.Parse()
+
 	l, err := net.Listen("tcp", "localhost:6379")
 	if err != nil {
 		log.Fatal("Failed to bind to port 6379")
@@ -55,6 +68,8 @@ func handleConnection(conn net.Conn) {
 			handleSET(cmd, conn)
 		case "get":
 			handleGET(cmd, conn)
+		case "config":
+			handleCONFIG(cmd, conn)
 		}
 
 	}
@@ -77,14 +92,14 @@ func handleSET(cmd *Command, conn net.Conn) {
 		}
 	}
 	log.Printf("%s -> %+v", key, value)
-	db[key] = value
+	cfg.db[key] = value
 	conn.Write([]byte("+OK\r\n"))
 
 }
 
 func handleGET(cmd *Command, conn net.Conn) {
-	val, ok := db[cmd.args[0]]
-	
+	val, ok := cfg.db[cmd.args[0]]
+
 	if ok && (time.Now().Before(val.exp) || val.exp.IsZero()) {
 		resp := fmt.Sprintf("$%d\r\n%s\r\n", len(val.value), val.value)
 		conn.Write([]byte(resp))
@@ -92,4 +107,17 @@ func handleGET(cmd *Command, conn net.Conn) {
 	}
 
 	conn.Write([]byte("$-1\r\n"))
+}
+
+func handleCONFIG(cmd *Command, conn net.Conn) {
+	if strings.ToLower(cmd.args[0]) == "get" {
+		switch strings.ToLower(cmd.args[1]) {
+		case "dir":
+			resp := fmt.Sprintf("*2\r\n$3\r\ndir\r\n$%d\r\n%s\r\n", len(cfg.dir), cfg.dir)
+			conn.Write([]byte(resp))
+		case "dbfilename":
+			resp := fmt.Sprintf("*2\r\n$3\r\ndbfilename\r\n$%d\r\n%s\r\n", len(cfg.dbFileName), cfg.dbFileName)
+			conn.Write([]byte(resp))
+		}
+	}
 }
