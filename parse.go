@@ -37,7 +37,7 @@ func parseCommand(conn io.Reader) (*Command, error) {
 		return nil, io.EOF
 	}
 
-	log.Printf(grey("=====REQUEST====="))
+	log.Print(grey("=====REQUEST====="))
 
 	text := client.Text()
 	log.Printf(magenta("> %s"), text)

@@ -10,7 +10,7 @@ import (
 )
 
 func handlePING(_ *Command, conn net.Conn) {
-	log.Printf(cyan("> +PONG\\r\\n"))
+	log.Print(cyan("> +PONG"))
 	conn.Write([]byte("+PONG\r\n"))
 }
 
@@ -39,7 +39,7 @@ func handleSET(cmd *Command, conn net.Conn) {
 	}
 
 	cfg.db[key] = value
-	log.Printf(cyan("> +OK"))
+	log.Print(cyan("> +OK"))
 	conn.Write([]byte("+OK\r\n"))
 }
 
@@ -60,16 +60,16 @@ func handleCONFIG(cmd *Command, conn net.Conn) {
 	if strings.ToLower(cmd.args[0]) == "get" {
 		switch strings.ToLower(cmd.args[1]) {
 		case "dir":
-			log.Printf(cyan("> *2"))
-			log.Printf(cyan("> $3"))
-			log.Printf(cyan("> dir"))
+			log.Print(cyan("> *2"))
+			log.Print(cyan("> $3"))
+			log.Print(cyan("> dir"))
 			log.Printf(cyan("> $%d"), len(cfg.dir))
 			log.Printf(cyan("> %s"), cfg.dir)
 			conn.Write(fmt.Appendf(nil, "*2\r\n$3\r\ndir\r\n$%d\r\n%s\r\n", len(cfg.dir), cfg.dir))
 		case "dbfilename":
-			log.Printf(cyan("> *2"))
-			log.Printf(cyan("> $10"))
-			log.Printf(cyan("> dbfilename"))
+			log.Print(cyan("> *2"))
+			log.Print(cyan("> $10"))
+			log.Print(cyan("> dbfilename"))
 			log.Printf(cyan("> $%d"), len(cfg.dbFileName))
 			log.Printf(cyan("> %s"), cfg.dbFileName)
 			conn.Write(fmt.Appendf(nil, "*2\r\n$10\r\ndbfilename\r\n$%d\r\n%s\r\n", len(cfg.dbFileName), cfg.dbFileName))

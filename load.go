@@ -39,9 +39,9 @@ func loadDataFromRDBFile() error {
 	header := make([]byte, HEADER_SIZE)
 	io.ReadFull(fileBuf, header)
 	if !strings.HasPrefix(string(header), "REDIS") {
-		return fmt.Errorf("Unexpected RDB header '%s'", header)
+		return fmt.Errorf("unexpected RDB header '%s'", header)
 	}
-	log.Printf(blue("HEADER:"))
+	log.Print(blue("HEADER:"))
 	log.Printf(grey("  %s"), header)
 
 	// METADATA SECTION (Denoted by 0xFA)
