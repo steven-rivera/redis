@@ -89,8 +89,9 @@ func handleKEYS(_ *Command, conn net.Conn) {
 
 func handleINFO(cmd *Command, conn net.Conn) {
 	if cmd.args[0] == "replication" {
-		log.Printf(cyan("> $%d"), len("role:master"))
-		log.Print(cyan("> role:master"))
-		conn.Write(fmt.Appendf(nil, "$%d\r\nrole:master\r\n", len("role:master")))
+		role := fmt.Sprintf("role:%s", cfg.role)
+		log.Printf(cyan("> $%d"), len(role))
+		log.Printf(cyan("> %s"), role)
+		conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(role), role))
 	}
 }

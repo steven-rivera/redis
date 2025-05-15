@@ -8,24 +8,66 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const DEFAULT_PORT = 6379
+
+type role = string
+
+const (
+	MASTER role = "master"
+	SLAVE  role = "slave"
+)
 
 type Value struct {
 	value string
 	exp   time.Time
 }
 
+type Server struct {
+	host string
+	port int
+}
+
+func (s *Server) String() string {
+	if s == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s %d", s.host, s.port)
+}
+
+func (s *Server) Set(str string) error {
+	fields := strings.Fields(str)
+	if len(fields) != 2 {
+		return fmt.Errorf("expected --replicaof='<MASTER_HOST> <MASTER_PORT>'")
+	}
+	host := fields[0]
+	port, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return fmt.Errorf("invalid port '%s'", fields[1])
+	}
+
+	s.host = host
+	s.port = port
+	return nil
+}
+
 type Config struct {
 	db         map[string]Value
 	dir        string
 	dbFileName string
-	port       uint
+	port       int
+	role       role
+	replicaof  Server
 }
 
-var cfg = Config{db: make(map[string]Value)}
+var cfg = Config{
+	db:   make(map[string]Value),
+	role: MASTER,
+}
 
 func parseArgs() {
 	dir, err := os.Getwd()
@@ -34,8 +76,13 @@ func parseArgs() {
 	}
 	flag.StringVar(&cfg.dir, "dir", dir, "the path to the directory where the RDB file is stored")
 	flag.StringVar(&cfg.dbFileName, "dbfilename", "dump.rdb", "the name of the RDB file")
-	flag.UintVar(&cfg.port, "port", DEFAULT_PORT, "the port that the redis server will listen on")
+	flag.IntVar(&cfg.port, "port", DEFAULT_PORT, "the port that the redis server will listen on")
+	flag.Var(&cfg.replicaof, "replicaof", "connect to master server and run in replica mode")
 	flag.Parse()
+
+	if cfg.replicaof != (Server{}) {
+		cfg.role = SLAVE
+	}
 }
 
 func listenAndServe() {
@@ -89,9 +136,10 @@ func handleConnection(conn net.Conn) {
 
 func main() {
 	parseArgs()
-	err := loadDataFromRDBFile()
-	if err != nil {
+
+	if err := loadDataFromRDBFile(); err != nil {
 		log.Fatalf(red("FAILER: %s"), err)
 	}
+
 	listenAndServe()
 }
