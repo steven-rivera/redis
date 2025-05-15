@@ -81,6 +81,8 @@ func handleConnection(conn net.Conn) {
 			handleCONFIG(cmd, conn)
 		case "keys":
 			handleKEYS(cmd, conn)
+		case "info":
+			handleINFO(cmd, conn)
 		}
 	}
 }
