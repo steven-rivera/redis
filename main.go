@@ -56,17 +56,20 @@ func (s *Server) Set(str string) error {
 }
 
 type Config struct {
-	db         map[string]Value
-	dir        string
-	dbFileName string
-	port       int
-	role       role
-	replicaof  Server
+	db               map[string]Value
+	dir              string
+	dbFileName       string
+	port             int
+	role             role
+	replicaof        Server
+	masterReplid     string
+	masterReplOffset int
 }
 
 var cfg = Config{
 	db:   make(map[string]Value),
 	role: MASTER,
+	masterReplOffset: 0,
 }
 
 func parseArgs() {
@@ -82,7 +85,10 @@ func parseArgs() {
 
 	if cfg.replicaof != (Server{}) {
 		cfg.role = SLAVE
-	}
+		return
+	} 
+
+	cfg.masterReplid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
 }
 
 func listenAndServe() {
