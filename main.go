@@ -3,12 +3,15 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
 	"time"
 )
+
+const DEFAULT_PORT = 6379
 
 type Value struct {
 	value string
@@ -19,24 +22,29 @@ type Config struct {
 	db         map[string]Value
 	dir        string
 	dbFileName string
+	port       uint
 }
 
 var cfg = Config{db: make(map[string]Value)}
 
 func parseArgs() {
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf(red("FAILER: %s"), err)
+	}
 	flag.StringVar(&cfg.dir, "dir", dir, "the path to the directory where the RDB file is stored")
 	flag.StringVar(&cfg.dbFileName, "dbfilename", "dump.rdb", "the name of the RDB file")
+	flag.UintVar(&cfg.port, "port", DEFAULT_PORT, "the port that the redis server will listen on")
 	flag.Parse()
 }
 
 func listenAndServe() {
-	l, err := net.Listen("tcp", "localhost:6379")
+	l, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", cfg.port))
 	if err != nil {
 		log.Fatalf(red("FAILER: %s"), err)
 	}
 
-	log.Println(green("Listening on port 6379"))
+	log.Printf(green("Listening on port %d"), cfg.port)
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -59,7 +67,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		log.Printf(grey("=====RESPONSE====="))
+		log.Print(grey("=====RESPONSE====="))
 		switch cmd.name {
 		case "ping":
 			handlePING(cmd, conn)
