@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"strings"
 )
@@ -37,8 +37,10 @@ func parseCommand(conn io.Reader) (*Command, error) {
 		return nil, io.EOF
 	}
 
+	log.Printf(grey("=====REQUEST====="))
+
 	text := client.Text()
-	fmt.Println(">", text)
+	log.Printf(magenta("> %s"), text)
 	numParams, err := strconv.Atoi(strings.TrimPrefix(text, "*"))
 	if err != nil {
 		return nil, err
@@ -47,11 +49,11 @@ func parseCommand(conn io.Reader) (*Command, error) {
 	for range numParams {
 		client.Scan() // Skip line containing length Ex: $4\r\n
 		text := client.Text()
-		fmt.Println(">", text)
-		
+		log.Printf(magenta("> %s"), text)
+
 		client.Scan()
 		text = client.Text()
-		fmt.Println(">", text)
+		log.Printf(magenta("> %s"), text)
 
 		switch cmd.state {
 		case commandStateParsingCmd:
@@ -62,6 +64,5 @@ func parseCommand(conn io.Reader) (*Command, error) {
 		}
 	}
 	cmd.state = commandStateDone
-
 	return cmd, nil
 }
