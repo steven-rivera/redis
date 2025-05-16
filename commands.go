@@ -72,7 +72,7 @@ func handleGET(cmd *Command, conn net.Conn) {
 
 	if ok && (time.Now().Before(val.exp) || val.exp.IsZero()) {
 		log.Printf(cyan("> $%d"), len(val.value))
-		log.Printf(cyan("> $%s"), val.value)
+		log.Printf(cyan("> %s"), val.value)
 		conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(val.value), val.value))
 		return
 	}

@@ -107,16 +107,16 @@ func listenAndServe() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	client := bufio.NewScanner(conn)
 	for {
-		cmd, err := parseCommand(conn)
+		cmd, err := parseCommand(client)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
 				log.Printf(yellow("ERROR: %s"), err)
 			}
 			return
 		}
-
-		log.Print(grey("=====RESPONSE====="))
+		
 		switch cmd.name {
 		case "ping":
 			handlePING(cmd, conn)

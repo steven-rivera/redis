@@ -22,9 +22,7 @@ type Command struct {
 	state commandState
 }
 
-func parseCommand(conn io.Reader) (*Command, error) {
-	client := bufio.NewScanner(conn)
-
+func parseCommand(client *bufio.Scanner) (*Command, error) {
 	cmd := &Command{
 		state: commandStateParsingCmd,
 	}
