@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -58,6 +59,7 @@ type Config struct {
 	replicaof        Server
 	masterReplid     string
 	masterReplOffset int
+	slaves           []net.Conn
 }
 
 var cfg = Config{
@@ -135,6 +137,12 @@ func handleConnection(conn net.Conn) {
 		case "psync":
 			handlePSYNC(cmd, conn)
 		}
+
+		if cfg.role == MASTER {
+			for _, slave := range cfg.slaves {
+				propagateCommand(cmd, slave)
+			}
+		}
 	}
 }
 
@@ -145,27 +153,32 @@ func connectToMaster() {
 	}
 
 	// HANDSHAKE
-	resp := make([]byte, 64)
+	c := bufio.NewReader(conn)
 
 	// PING (1/3)
 	conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
-	n, _ := conn.Read(resp)
-	log.Printf("GOT: %q", resp[:n])
+	resp, _, _ := c.ReadLine()
+	log.Printf(grey("GOT: %s"), resp)
 
 	// REPLCONF (2/3)
 	conn.Write(fmt.Appendf(nil, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$%d\r\n%s\r\n", len(cfg.port), cfg.port))
-	n, _ = conn.Read(resp)
-	log.Printf("GOT: %q", resp[:n])
+	resp, _, _ = c.ReadLine()
+	log.Printf(grey("GOT: %s"), resp)
 
 	conn.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n"))
-	n, _ = conn.Read(resp)
-	log.Printf("GOT: %q", resp[:n])
+	resp, _, _ = c.ReadLine()
+	log.Printf(grey("GOT: %s"), resp)
 
 	// PSYNC (3/3)
 	conn.Write([]byte("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n"))
-	n, _ = conn.Read(resp)
-	log.Printf("GOT: %q", resp[:n])
+	resp, _, _ = c.ReadLine()
+	log.Printf(grey("GOT: %s"), resp)
 
+	if err := loadDataFromConn(c); err != nil {
+		log.Fatalf(red("FATAL: %s"), err)
+	}
+
+	go handleConnection(conn)
 }
 
 func main() {
@@ -178,6 +191,5 @@ func main() {
 	if cfg.role == SLAVE {
 		connectToMaster()
 	}
-
 	listenAndServe()
 }

@@ -33,11 +33,30 @@ func loadDataFromRDBFile() error {
 	defer dbFile.Close()
 
 	log.Printf(grey("=====Loading RDB file '%s'====="), filepath.Join(cfg.dir, cfg.dbFileName))
-	fileBuf := bufio.NewReader(dbFile)
+	return loadData(bufio.NewReader(dbFile))
 
+}
+
+func loadDataFromConn(conn *bufio.Reader) error {
+	line, _, _ := conn.ReadLine()
+
+	if line[0] != '$' {
+		return fmt.Errorf("expected '$'")
+	}
+
+	_, err := strconv.Atoi(string(line[1:]))
+	if err != nil {
+		return fmt.Errorf("expected valid length got: %s", line[1:])
+	}
+
+	log.Print(grey("=====Loading RDB file from connection ====="))
+	return loadData(conn)
+}
+
+func loadData(data *bufio.Reader) error {
 	// HEADER SECTION
 	header := make([]byte, HEADER_SIZE)
-	io.ReadFull(fileBuf, header)
+	io.ReadFull(data, header)
 	if !strings.HasPrefix(string(header), "REDIS") {
 		return fmt.Errorf("unexpected RDB header '%s'", header)
 	}
@@ -47,13 +66,13 @@ func loadDataFromRDBFile() error {
 	// METADATA SECTION (Denoted by 0xFA)
 	log.Print(blue("METADATA:"))
 	for {
-		b, _ := fileBuf.ReadByte()
+		b, _ := data.ReadByte()
 		if b == METADATA_SUBSECTION {
-			name := parseStringEncodedValue(fileBuf)
-			value := parseStringEncodedValue(fileBuf)
+			name := parseStringEncodedValue(data)
+			value := parseStringEncodedValue(data)
 			log.Printf(grey("  %s='%s'"), name, value)
 		} else {
-			fileBuf.UnreadByte()
+			data.UnreadByte()
 			break
 		}
 	}
@@ -61,34 +80,34 @@ func loadDataFromRDBFile() error {
 	// DATABASE SUBSECTION (Denoted by 0xFE)
 	exp := time.Time{}
 	for {
-		b, err := fileBuf.ReadByte()
+		b, err := data.ReadByte()
 		if err != nil {
 			return err
 		}
 
 		switch b {
 		case DATABASE_SUBSECTION:
-			dbIndex := parseSizeEncodedValue(fileBuf)
+			dbIndex := parseSizeEncodedValue(data)
 			log.Printf(blue("DB INDEX %d:"), dbIndex)
 		case HASH_TABLE_SIZE_SECTION:
-			hashTableSize := parseSizeEncodedValue(fileBuf)
-			hashTableSizeWithExpiry := parseSizeEncodedValue(fileBuf)
+			hashTableSize := parseSizeEncodedValue(data)
+			hashTableSizeWithExpiry := parseSizeEncodedValue(data)
 			log.Printf(grey("  TOTAL_SIZE=%d"), hashTableSize)
 			log.Printf(grey("  EXPIRY_SIZE=%d"), hashTableSizeWithExpiry)
 		case DB_TYPE_STRING:
-			key := parseStringEncodedValue(fileBuf)
+			key := parseStringEncodedValue(data)
 			value := Value{
-				value: parseStringEncodedValue(fileBuf),
+				value: parseStringEncodedValue(data),
 				exp:   exp,
 			}
 			cfg.db[key] = value
 			log.Printf(grey("\t%s='%s', expires=%s"), key, value.value, value.exp.Format(time.RFC1123Z))
 			exp = time.Time{} // Reset incase next key has no expiry
 		case DB_KEY_EXP_MILLI:
-			unixExpireTime := parseUnixTimeValue(fileBuf, "milli")
+			unixExpireTime := parseUnixTimeValue(data, "milli")
 			exp = time.UnixMilli(int64(unixExpireTime))
 		case DB_KEY_EXP_SEC:
-			unixExpireTime := parseUnixTimeValue(fileBuf, "sec")
+			unixExpireTime := parseUnixTimeValue(data, "sec")
 			exp = time.Unix(int64(unixExpireTime), 0)
 		case EOF_SECTION:
 			return nil

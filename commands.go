@@ -10,6 +10,24 @@ import (
 	"time"
 )
 
+func propagateCommand(cmd *Command, conn net.Conn) {
+	writeCommands := map[string]bool{
+		"set": true,
+		"del": true,
+	}
+
+	if _, ok := writeCommands[cmd.name]; !ok {
+		return
+	}
+
+	log.Printf(grey("Propagating command: %s"), cmd.name)
+
+	conn.Write(fmt.Appendf(nil, "*%d\r\n$%d\r\n%s\r\n", 1+len(cmd.args), len(cmd.name), cmd.name))
+	for _, arg := range cmd.args {
+		conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(arg), arg))
+	}
+}
+
 func handlePING(_ *Command, conn net.Conn) {
 	log.Print(cyan("> +PONG"))
 	conn.Write([]byte("+PONG\r\n"))
@@ -31,7 +49,9 @@ func handleSET(cmd *Command, conn net.Conn) {
 		units := cmd.args[2]
 		num, err := strconv.Atoi(cmd.args[3])
 		if err != nil {
-			conn.Write(fmt.Appendf(nil, "-ERR %s", err))
+			if cfg.role == MASTER {
+				conn.Write(fmt.Appendf(nil, "-ERR %s", err))
+			}
 			return
 		}
 		if strings.ToLower(units) == "px" {
@@ -40,8 +60,11 @@ func handleSET(cmd *Command, conn net.Conn) {
 	}
 
 	cfg.db[key] = value
-	log.Print(cyan("> +OK"))
-	conn.Write([]byte("+OK\r\n"))
+	if cfg.role == MASTER {
+		log.Print(cyan("> +OK"))
+		conn.Write([]byte("+OK\r\n"))
+	}
+
 }
 
 func handleGET(cmd *Command, conn net.Conn) {
@@ -119,5 +142,7 @@ func handlePSYNC(_ *Command, conn net.Conn) {
 	data, _ := base64.StdEncoding.DecodeString(emptyRDBfile)
 	log.Printf(cyan("> $%d"), len(data))
 	log.Printf(cyan("> %#x"), data)
-	conn.Write(fmt.Appendf(nil,"$%d\r\n%s", len(data), data))
+	conn.Write(fmt.Appendf(nil, "$%d\r\n%s", len(data), data))
+
+	cfg.slaves = append(cfg.slaves, conn)
 }
