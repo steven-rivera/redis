@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -113,4 +114,10 @@ func handleREPLCONF(_ *Command, conn net.Conn) {
 func handlePSYNC(_ *Command, conn net.Conn) {
 	log.Print(cyan("> +FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0"))
 	conn.Write([]byte("+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n"))
+
+	emptyRDBfile := "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
+	data, _ := base64.StdEncoding.DecodeString(emptyRDBfile)
+	log.Printf(cyan("> $%d"), len(data))
+	log.Printf(cyan("> %#x"), data)
+	conn.Write(fmt.Appendf(nil,"$%d\r\n%s", len(data), data))
 }
