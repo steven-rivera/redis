@@ -104,3 +104,13 @@ func handleINFO(cmd *Command, conn net.Conn) {
 		conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(resp), resp))
 	}
 }
+
+func handleREPLCONF(_ *Command, conn net.Conn) {
+	log.Print(cyan("> +OK"))
+	conn.Write([]byte("+OK\r\n"))
+}
+
+func handlePSYNC(_ *Command, conn net.Conn) {
+	log.Print(cyan("> +FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0"))
+	conn.Write([]byte("+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n"))
+}

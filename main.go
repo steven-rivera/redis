@@ -8,12 +8,11 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
 
-const DEFAULT_PORT = 6379
+const DEFAULT_PORT = "6379"
 
 type role = string
 
@@ -29,14 +28,14 @@ type Value struct {
 
 type Server struct {
 	host string
-	port int
+	port string
 }
 
 func (s *Server) String() string {
 	if s == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s %d", s.host, s.port)
+	return fmt.Sprintf("%s %s", s.host, s.port)
 }
 
 func (s *Server) Set(str string) error {
@@ -44,14 +43,9 @@ func (s *Server) Set(str string) error {
 	if len(fields) != 2 {
 		return fmt.Errorf("expected --replicaof='<MASTER_HOST> <MASTER_PORT>'")
 	}
-	host := fields[0]
-	port, err := strconv.Atoi(fields[1])
-	if err != nil {
-		return fmt.Errorf("invalid port '%s'", fields[1])
-	}
 
-	s.host = host
-	s.port = port
+	s.host = fields[0]
+	s.port = fields[1]
 	return nil
 }
 
@@ -59,7 +53,7 @@ type Config struct {
 	db               map[string]Value
 	dir              string
 	dbFileName       string
-	port             int
+	port             string
 	role             role
 	replicaof        Server
 	masterReplid     string
@@ -67,8 +61,8 @@ type Config struct {
 }
 
 var cfg = Config{
-	db:   make(map[string]Value),
-	role: MASTER,
+	db:               make(map[string]Value),
+	role:             MASTER,
 	masterReplOffset: 0,
 }
 
@@ -79,25 +73,25 @@ func parseArgs() {
 	}
 	flag.StringVar(&cfg.dir, "dir", dir, "the path to the directory where the RDB file is stored")
 	flag.StringVar(&cfg.dbFileName, "dbfilename", "dump.rdb", "the name of the RDB file")
-	flag.IntVar(&cfg.port, "port", DEFAULT_PORT, "the port that the redis server will listen on")
+	flag.StringVar(&cfg.port, "port", DEFAULT_PORT, "the port that the redis server will listen on")
 	flag.Var(&cfg.replicaof, "replicaof", "connect to master server and run in replica mode")
 	flag.Parse()
 
 	if cfg.replicaof != (Server{}) {
 		cfg.role = SLAVE
 		return
-	} 
+	}
 
 	cfg.masterReplid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
 }
 
 func listenAndServe() {
-	l, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", cfg.port))
+	l, err := net.Listen("tcp", net.JoinHostPort("localhost", cfg.port))
 	if err != nil {
 		log.Fatalf(red("FAILER: %s"), err)
 	}
 
-	log.Printf(green("Listening on port %d"), cfg.port)
+	log.Printf(green("Listening on port %s"), cfg.port)
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -136,8 +130,42 @@ func handleConnection(conn net.Conn) {
 			handleKEYS(cmd, conn)
 		case "info":
 			handleINFO(cmd, conn)
+		case "replconf":
+			handleREPLCONF(cmd, conn)
+		case "psync":
+			handlePSYNC(cmd, conn)
 		}
 	}
+}
+
+func connectToMaster() {
+	conn, err := net.Dial("tcp", net.JoinHostPort(cfg.replicaof.host, cfg.replicaof.port))
+	if err != nil {
+		log.Fatalf(red("FAILED to connect to master: %s"), err)
+	}
+
+	// HANDSHAKE
+	resp := make([]byte, 64)
+
+	// PING (1/3)
+	conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
+	n, _ := conn.Read(resp)
+	log.Printf("GOT: %q", resp[:n])
+
+	// REPLCONF (2/3)
+	conn.Write(fmt.Appendf(nil, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$%d\r\n%s\r\n", len(cfg.port), cfg.port))
+	n, _ = conn.Read(resp)
+	log.Printf("GOT: %q", resp[:n])
+
+	conn.Write([]byte("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n"))
+	n, _ = conn.Read(resp)
+	log.Printf("GOT: %q", resp[:n])
+
+	// PSYNC (3/3)
+	conn.Write([]byte("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n"))
+	n, _ = conn.Read(resp)
+	log.Printf("GOT: %q", resp[:n])
+
 }
 
 func main() {
@@ -145,6 +173,10 @@ func main() {
 
 	if err := loadDataFromRDBFile(); err != nil {
 		log.Fatalf(red("FAILER: %s"), err)
+	}
+
+	if cfg.role == SLAVE {
+		connectToMaster()
 	}
 
 	listenAndServe()
