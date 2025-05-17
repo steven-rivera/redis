@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,25 +34,39 @@ func loadDataFromRDBFile() error {
 	}
 	defer dbFile.Close()
 
-	log.Printf(grey("=====Loading RDB file '%s'====="), filepath.Join(cfg.dir, cfg.dbFileName))
+	log.Printf(grey("===== Loading RDB file '%s'====="), filepath.Join(cfg.dir, cfg.dbFileName))
 	return loadData(bufio.NewReader(dbFile))
 
 }
 
-func loadDataFromConn(conn *bufio.Reader) error {
-	line, _, _ := conn.ReadLine()
+func loadDataFromConn(conn net.Conn) error {
+	buf := make([]byte, 1)
+	conn.Read(buf)
 
-	if line[0] != '$' {
+	if buf[0] != '$' {
 		return fmt.Errorf("expected '$'")
 	}
 
-	_, err := strconv.Atoi(string(line[1:]))
-	if err != nil {
-		return fmt.Errorf("expected valid length got: %s", line[1:])
+	length := ""
+	for {
+		conn.Read(buf)
+		if buf[0] == '\r' {
+			conn.Read(buf)
+			break
+		}
+		length += string(buf[0])
 	}
 
+	l, err := strconv.Atoi(length)
+	if err != nil {
+		return fmt.Errorf("expected valid length got: %s", length)
+	}
+
+	data := make([]byte, l)
+	io.ReadFull(conn, data)
+
 	log.Print(grey("=====Loading RDB file from connection ====="))
-	return loadData(conn)
+	return loadData(bufio.NewReader(bytes.NewReader(data)))
 }
 
 func loadData(data *bufio.Reader) error {
@@ -60,22 +76,22 @@ func loadData(data *bufio.Reader) error {
 	if !strings.HasPrefix(string(header), "REDIS") {
 		return fmt.Errorf("unexpected RDB header '%s'", header)
 	}
-	log.Print(blue("HEADER:"))
-	log.Printf(grey("  %s"), header)
+	log.Printf(blue("HEADER: ") + grey("%s"), header)
 
 	// METADATA SECTION (Denoted by 0xFA)
-	log.Print(blue("METADATA:"))
+	metadata := []string{}
 	for {
 		b, _ := data.ReadByte()
 		if b == METADATA_SUBSECTION {
 			name := parseStringEncodedValue(data)
 			value := parseStringEncodedValue(data)
-			log.Printf(grey("  %s='%s'"), name, value)
+			metadata = append(metadata, fmt.Sprintf("%s='%s'", name, value))
 		} else {
 			data.UnreadByte()
 			break
 		}
 	}
+	log.Printf(blue("METADATA: ") + grey("%s"), strings.Join(metadata, ", "))
 
 	// DATABASE SUBSECTION (Denoted by 0xFE)
 	exp := time.Time{}
@@ -92,8 +108,7 @@ func loadData(data *bufio.Reader) error {
 		case HASH_TABLE_SIZE_SECTION:
 			hashTableSize := parseSizeEncodedValue(data)
 			hashTableSizeWithExpiry := parseSizeEncodedValue(data)
-			log.Printf(grey("  TOTAL_SIZE=%d"), hashTableSize)
-			log.Printf(grey("  EXPIRY_SIZE=%d"), hashTableSizeWithExpiry)
+			log.Printf(grey("  TOTAL_SIZE=%d, EXPIRY_SIZE=%d"), hashTableSize, hashTableSizeWithExpiry)
 		case DB_TYPE_STRING:
 			key := parseStringEncodedValue(data)
 			value := Value{

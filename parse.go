@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"io"
 	"log"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -22,7 +23,8 @@ type Command struct {
 	state commandState
 }
 
-func parseCommand(client *bufio.Scanner) (*Command, error) {
+func parseCommand(client *bufio.Scanner, remote net.Addr) (*Command, int, error) {
+	bytesProc := 0
 	cmd := &Command{
 		state: commandStateParsingCmd,
 	}
@@ -30,28 +32,31 @@ func parseCommand(client *bufio.Scanner) (*Command, error) {
 	if ok := client.Scan(); !ok {
 		err := client.Err()
 		if err != nil {
-			return nil, err
+			return nil, bytesProc, err
 		}
-		return nil, io.EOF
+		return nil, bytesProc, io.EOF
 	}
 
-	log.Print(grey("=====REQUEST====="))
+	lines := []string{}
 
 	text := client.Text()
-	log.Printf(magenta("> %s"), text)
+	bytesProc += (len(text) + 2)
+	lines = append(lines, text)
 	numParams, err := strconv.Atoi(strings.TrimPrefix(text, "*"))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	for range numParams {
 		client.Scan() // Skip line containing length Ex: $4\r\n
 		text := client.Text()
-		log.Printf(magenta("> %s"), text)
+		bytesProc += (len(text) + 2)
+		lines = append(lines, text)
 
 		client.Scan()
 		text = client.Text()
-		log.Printf(magenta("> %s"), text)
+		bytesProc += (len(text) + 2)
+		lines = append(lines, text)
 
 		switch cmd.state {
 		case commandStateParsingCmd:
@@ -61,6 +66,7 @@ func parseCommand(client *bufio.Scanner) (*Command, error) {
 			cmd.args = append(cmd.args, text)
 		}
 	}
+	log.Printf(magenta("=== REQUEST %+v ===\n")+magenta("> %s"), remote, strings.Join(lines, " "))
 	cmd.state = commandStateDone
-	return cmd, nil
+	return cmd, bytesProc, nil
 }

@@ -20,8 +20,6 @@ func propagateCommand(cmd *Command, conn net.Conn) {
 		return
 	}
 
-	log.Printf(grey("Propagating command: %s"), cmd.name)
-
 	conn.Write(fmt.Appendf(nil, "*%d\r\n$%d\r\n%s\r\n", 1+len(cmd.args), len(cmd.name), cmd.name))
 	for _, arg := range cmd.args {
 		conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(arg), arg))
@@ -29,14 +27,15 @@ func propagateCommand(cmd *Command, conn net.Conn) {
 }
 
 func handlePING(_ *Command, conn net.Conn) {
-	log.Print(cyan("> +PONG"))
-	conn.Write([]byte("+PONG\r\n"))
+	if cfg.role == MASTER {
+		log.Print(cyan("> +PONG"))
+		conn.Write([]byte("+PONG\r\n"))
+	}
 }
 
 func handleECHO(cmd *Command, conn net.Conn) {
 	for _, arg := range cmd.args {
-		log.Printf(cyan("> $%d"), len(arg))
-		log.Printf(cyan("> $%s"), arg)
+		log.Printf(cyan("> $%d %s"), len(arg), arg)
 		conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(arg), arg))
 	}
 }
@@ -71,12 +70,17 @@ func handleGET(cmd *Command, conn net.Conn) {
 	val, ok := cfg.db[cmd.args[0]]
 
 	if ok && (time.Now().Before(val.exp) || val.exp.IsZero()) {
-		log.Printf(cyan("> $%d"), len(val.value))
-		log.Printf(cyan("> %s"), val.value)
-		conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(val.value), val.value))
+		log.Printf(cyan("=== RESPONSE %+v ===\n")+cyan("> $%d %s"), conn.RemoteAddr(), len(val.value), val.value)
+		// log.Printf(cyan("> $%d %s"), len(val.value), val.value)
+		n, err := conn.Write(fmt.Appendf(nil, "$%d\r\n%s\r\n", len(val.value), val.value))
+		log.Printf(cyan("> Wrote %d bytes"), n)
+		if err != nil {
+			log.Printf(yellow("> %s"), err)
+		}
 		return
 	}
 
+	log.Printf(cyan("=== RESPONSE %+v ===\n")+cyan("$-1"), conn.RemoteAddr())
 	conn.Write([]byte("$-1\r\n"))
 }
 
@@ -84,18 +88,10 @@ func handleCONFIG(cmd *Command, conn net.Conn) {
 	if strings.ToLower(cmd.args[0]) == "get" {
 		switch strings.ToLower(cmd.args[1]) {
 		case "dir":
-			log.Print(cyan("> *2"))
-			log.Print(cyan("> $3"))
-			log.Print(cyan("> dir"))
-			log.Printf(cyan("> $%d"), len(cfg.dir))
-			log.Printf(cyan("> %s"), cfg.dir)
+			log.Printf(cyan("> *2 $3 dir $%d %s"), len(cfg.dir), cfg.dir)
 			conn.Write(fmt.Appendf(nil, "*2\r\n$3\r\ndir\r\n$%d\r\n%s\r\n", len(cfg.dir), cfg.dir))
 		case "dbfilename":
-			log.Print(cyan("> *2"))
-			log.Print(cyan("> $10"))
-			log.Print(cyan("> dbfilename"))
-			log.Printf(cyan("> $%d"), len(cfg.dbFileName))
-			log.Printf(cyan("> %s"), cfg.dbFileName)
+			log.Printf(cyan("> *2 $10 dbfilename $%d %s"), len(cfg.dbFileName), cfg.dbFileName)
 			conn.Write(fmt.Appendf(nil, "*2\r\n$10\r\ndbfilename\r\n$%d\r\n%s\r\n", len(cfg.dbFileName), cfg.dbFileName))
 		}
 	}
@@ -129,9 +125,17 @@ func handleINFO(cmd *Command, conn net.Conn) {
 	}
 }
 
-func handleREPLCONF(_ *Command, conn net.Conn) {
-	log.Print(cyan("> +OK"))
-	conn.Write([]byte("+OK\r\n"))
+func handleREPLCONF(cmd *Command, conn net.Conn) {
+	switch cmd.args[0] {
+	case "listening-port", "capa":
+		log.Print(cyan("> +OK"))
+		conn.Write([]byte("+OK\r\n"))
+	case "getack", "GETACK":
+		offset := strconv.Itoa(cfg.masterReplOffset)
+		log.Printf(cyan("> *3 $8 REPLCONF $3 ACK $%d %s"), len(offset), offset)
+		conn.Write(fmt.Appendf(nil, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n", len(offset), offset))
+	}
+
 }
 
 func handlePSYNC(_ *Command, conn net.Conn) {
@@ -140,8 +144,7 @@ func handlePSYNC(_ *Command, conn net.Conn) {
 
 	emptyRDBfile := "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
 	data, _ := base64.StdEncoding.DecodeString(emptyRDBfile)
-	log.Printf(cyan("> $%d"), len(data))
-	log.Printf(cyan("> %#x"), data)
+	log.Printf(cyan("> $%d %x"), len(data), data)
 	conn.Write(fmt.Appendf(nil, "$%d\r\n%s", len(data), data))
 
 	cfg.slaves = append(cfg.slaves, conn)
